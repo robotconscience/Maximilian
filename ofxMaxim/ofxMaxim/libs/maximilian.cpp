@@ -572,62 +572,106 @@ bool maxiSample::read()
 		bool datafound = false;
 		inFile.seekg(4, ios::beg);
 		inFile.read( (char*) &myChunkSize, 4 ); // read the ChunkSize
+        
+        // first subchunk is at byte 12
+        char * myChunkID = new char[4];
+        inFile.seekg(12, ios::beg);
+        inFile.read( myChunkID, 4 );
+        
+        int offset = 12;
+        
+        string name(myChunkID);
+        inFile.read( (char*) &mySubChunk1Size, 4 ); // read the SubChunk1Size
+        offset += mySubChunk1Size;
+        cout << name<<endl;
+        
+        cout << name.find("fmt")<<endl;
+        
+        while ( name.find("fmt") == string::npos ){
+            inFile.seekg(offset, ios::beg);
+            inFile.read( myChunkID, 4 );
+            inFile.read( (char*) &mySubChunk1Size, 4 ); // read the SubChunk1Size
+            name = string(myChunkID);
+            offset += 8 + mySubChunk1Size;
+            cout << name<<endl;
+        }
+        
+        //inFile.seekg(20, ios::beg);
+        inFile.read( (char*) &myFormat, sizeof(short) ); // read the file format.  This should be 1 for PCM
+        
+        //inFile.seekg(22, ios::beg);
+        inFile.read( (char*) &myChannels, sizeof(short) ); // read the # of channels (1 or 2)
+        
+        //inFile.seekg(24, ios::beg);
+        inFile.read( (char*) &mySampleRate, sizeof(int) ); // read the samplerate
+        
+        //inFile.seekg(28, ios::beg);
+        inFile.read( (char*) &myByteRate, sizeof(int) ); // read the byterate
+        
+        //inFile.seekg(32, ios::beg);
+        inFile.read( (char*) &myBlockAlign, sizeof(short) ); // read the blockalign
+        
+        //inFile.seekg(34, ios::beg);
+        inFile.read( (char*) &myBitsPerSample, sizeof(short) ); // read the bitspersample
 		
-		inFile.seekg(16, ios::beg);
-		inFile.read( (char*) &mySubChunk1Size, 4 ); // read the SubChunk1Size
-		
-		//inFile.seekg(20, ios::beg);
-		inFile.read( (char*) &myFormat, sizeof(short) ); // read the file format.  This should be 1 for PCM
-		
-		//inFile.seekg(22, ios::beg);
-		inFile.read( (char*) &myChannels, sizeof(short) ); // read the # of channels (1 or 2)
-		
-		//inFile.seekg(24, ios::beg);
-		inFile.read( (char*) &mySampleRate, sizeof(int) ); // read the samplerate
-		
-		//inFile.seekg(28, ios::beg);
-		inFile.read( (char*) &myByteRate, sizeof(int) ); // read the byterate
-		
-		//inFile.seekg(32, ios::beg);
-		inFile.read( (char*) &myBlockAlign, sizeof(short) ); // read the blockalign
-		
-		//inFile.seekg(34, ios::beg);
-		inFile.read( (char*) &myBitsPerSample, sizeof(short) ); // read the bitspersample
-		
-		//ignore any extra chunks
-		char chunkID[5]="";
-		chunkID[4] = 0;
-		int filePos = 20 + mySubChunk1Size;
+        //ignore any extra chunks
+        int filePos = offset;// + offset;//mySubChunk1Size;
+        
 		while(!datafound && !inFile.eof()) {
 			inFile.seekg(filePos, ios::beg);
-			inFile.read((char*) &chunkID, sizeof(char) * 4);
+			inFile.read(myChunkID, 4);
 			inFile.seekg(filePos + 4, ios::beg);
-			inFile.read( (char*) &myDataSize, sizeof(int) ); // read the size of the data
-			filePos += 8;
-			if (strcmp(chunkID,"data") == 0) {
+			inFile.read( (char*) &myDataSize, 4 ); // read the size of the data
+            filePos += 8;
+            
+            name = string(myChunkID);
+            cout << filePos <<":"<< name <<":"<<myDataSize<< endl;
+            
+            if (name.find("data") != string::npos ) {
 				datafound = true;
 			}else{
 				filePos += myDataSize;
 			}
 		}
-		
-		// read the data chunk
-		char *myData = (char*) malloc(myDataSize * sizeof(char));
-		inFile.seekg(filePos, ios::beg);
-		inFile.read(myData, myDataSize);
-		length=myDataSize*(0.5/myChannels);
-		inFile.close(); // close the input file
-		
+        
+        // read the data chunk
+        char *myData = (char*) malloc(myDataSize* sizeof(char));
+        inFile.seekg(filePos, ios::beg);
+        
+        if ( myDataSize > INT_MAX ){
+            inFile.read(myData, INT_MAX);
+            unsigned int off = INT_MAX;
+            unsigned int diff = myDataSize - INT_MAX;
+            
+            while (diff > 0) {
+                int to_read = (diff > INT_MAX) ? INT_MAX : diff;
+                inFile.read(myData + off, to_read);
+                off += to_read;
+                diff = myDataSize - off;
+            }
+            
+        } else {
+            inFile.read(myData, myDataSize);
+            
+        }
+        if (inFile.bad())
+            perror("error while reading file");
+        
+        length=myDataSize*(0.5/myChannels);
+        inFile.close(); // close the input file
+        
         cout << "Ch: " << myChannels << ", len: " << length << endl;
-		if (myChannels>1) {
-			int position=0;
-			int channel=readChannel*2;
-			for (int i=channel;i<myDataSize+6;i+=(myChannels*2)) {
-				myData[position]=myData[i];
-				myData[position+1]=myData[i+1];
-				position+=2;
-			}
-		}
+        if (myChannels>1) {
+            uint32_t position=0;
+            uint32_t channel=readChannel*2;
+            
+            for (uint32_t i=channel; i<myDataSize; i+=(myChannels*2)) {
+                myData[position]=myData[i];
+                myData[position+1]=myData[i+1];
+                position+=2;
+            }
+        }
+		
         free(temp);
         temp = (short*) malloc(myDataSize * sizeof(char));
         memcpy(temp, myData, myDataSize * sizeof(char));
@@ -697,7 +741,7 @@ double maxiSample::playOnce(double speed) {
 
 double maxiSample::play(double speed) {
 	double remainder;
-	long a,b;
+	unsigned long a,b;
 	position=position+((speed*chandiv)/(maxiSettings::sampleRate/mySampleRate));
 	if (speed >=0) {
 		
@@ -718,7 +762,10 @@ double maxiSample::play(double speed) {
 		b=length-1;
 		}
 		
-		output = (double) ((1-remainder) * temp[a] + remainder * temp[b])/32767;//linear interpolation
+		output = (double) ((1.-remainder) * temp[a] + remainder * temp[b])/32767.;//linear interpolation
+        
+        //cout << position << ":"<<output<<":"<<temp[a]<<endl;
+        
 } else {
 		if ((long) position<0) position=length;
 		remainder = position - floor(position);

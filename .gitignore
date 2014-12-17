@@ -2,7 +2,7 @@
 *.mode1v3
 *.mode2v3
 build
-
+xcuserdata
 
 build
 .DS_Store

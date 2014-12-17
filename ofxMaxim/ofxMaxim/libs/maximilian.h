@@ -220,7 +220,7 @@ private:
 	
 public:
 	double position, recordPosition;
-	int	myDataSize;
+	unsigned int myDataSize;
 	short 	myChannels;
 	int   	mySampleRate;
 	long length;
